@@ -1,109 +1,120 @@
-// 응답 기록에 토큰, 비밀 키, 실명, 메모 본문을 넣지 않습니다.
+import { execFileSync } from 'node:child_process';
+
 export async function runAttackChecks(config) {
-  if (config.step !== 2) {
-    throw new Error('이 점검은 2단계용입니다.');
+  if (config.step !== 3) {
+    throw new Error('이 점검은 3단계용입니다.');
   }
 
-  let app;
-  try {
-    app = new URL(config.publicAppUrl);
-  } catch {
-    throw new Error('실제 배포 주소를 설정해 주세요.');
-  }
-
+  const app = new URL(config.publicAppUrl);
   if (
     app.protocol !== 'https:' ||
     app.username ||
     app.password ||
     app.search ||
     app.hash ||
-    app.pathname !== '/' ||
-    app.hostname.endsWith('.example')
+    app.pathname !== '/'
   ) {
-    throw new Error('실제 HTTPS 배포 주소를 설정해 주세요.');
+    throw new Error('실제 HTTPS 배포 주소를 확인하세요.');
   }
 
-  if (typeof config.sampleMarker !== 'string' || !config.sampleMarker) {
-    throw new Error('가상 메모의 확인 표시를 설정해 주세요.');
-  }
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim();
 
-  const request = (path) =>
-    fetch(new URL(path, app), {
+  const results = [];
+
+  async function request(path, options = {}) {
+    return fetch(new URL(path, app), {
+      ...options,
       redirect: 'error',
       cache: 'no-store',
       signal: AbortSignal.timeout(15000),
     });
+  }
 
-  const readJson = async (response) => {
+  async function json(response) {
     try {
       return await response.json();
     } catch {
       return null;
     }
-  };
+  }
 
-  const apiResponse = await request('/api/notes');
-  const apiData = await readJson(apiResponse);
-  const apiVisible =
-    apiResponse.status === 200 &&
-    apiData?.sampleMarker === config.sampleMarker &&
-    Array.isArray(apiData?.notes) &&
-    apiData.notes.length === 4 &&
-    apiData.notes.every(
-      (note) =>
-        typeof note?.title === 'string' &&
-        typeof note?.content === 'string'
+  function record(attackId, expected, passed, detail) {
+    results.push({
+      attackId,
+      expected,
+      observed: `${passed ? '통과' : '실패'}: ${detail}`,
+    });
+  }
+
+  for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+    const response = await request('/api/notes', { method });
+    const data = await json(response);
+    const passed =
+      [401, 403].includes(response.status) &&
+      response.headers.get('content-type')?.includes('application/json') &&
+      typeof data?.error === 'string' &&
+      !Object.hasOwn(data, 'notes');
+
+    record(
+      `anonymous_${method.toLowerCase()}_denied`,
+      `로그인 없는 ${method} 요청은 JSON 오류와 HTTP 401 또는 403`,
+      passed,
+      `${method} 요청 HTTP ${response.status}, JSON 거부 조건 ${passed ? '충족' : '불충족'}`
     );
+  }
+
+  const invalidResponse = await request('/api/notes', {
+    headers: { Authorization: 'Bearer invalid-token' },
+  });
+  const invalidData = await json(invalidResponse);
+
+  record(
+    'malformed_token_denied',
+    '형식이 잘못된 토큰의 메모 조회 거부',
+    [401, 403].includes(invalidResponse.status) &&
+      typeof invalidData?.error === 'string',
+    `잘못된 토큰 요청 HTTP ${invalidResponse.status}`
+  );
 
   const staticResponse = await request('/data.json');
-  const staticRemoved = staticResponse.status === 404;
+  record(
+    'static_note_file_removed',
+    '/data.json은 HTTP 404',
+    staticResponse.status === 404,
+    `/data.json HTTP ${staticResponse.status}`
+  );
 
   const identityResponse = await request('/aleph.json');
-  const identityData = await readJson(identityResponse);
+  const identity = await json(identityResponse);
   const identityValid =
     identityResponse.status === 200 &&
-    identityData?.schema === 'aleph.defense.deployment.v1' &&
-    identityData?.step === 2 &&
-    identityData?.repoUrl === config.repoUrl &&
-    identityData?.judgeIssuer === config.judgeIssuer &&
-    identityData?.sampleMarker === config.sampleMarker &&
-    /^[0-9a-f]{40}$/i.test(identityData?.commit ?? '');
+    identity?.schema === 'aleph.defense.deployment.v1' &&
+    identity?.step === 3 &&
+    identity?.repoUrl === config.repoUrl &&
+    identity?.judgeIssuer === config.judgeIssuer &&
+    identity?.sampleMarker === config.sampleMarker &&
+    identity?.commit === commit;
 
-  const pageResponse = await request('/');
+  record(
+    'deployment_identity',
+    '배포 식별 정보가 3단계이며 현재 커밋과 일치',
+    identityValid,
+    `배포 식별 정보와 현재 커밋 ${identityValid ? '일치' : '불일치'}`
+  );
+
+  const page = await request('/');
   const headerValid =
-    pageResponse.status === 200 &&
-    pageResponse.headers
-      .get('x-content-type-options')
-      ?.toLowerCase() === 'nosniff';
+    page.status === 200 &&
+    page.headers.get('x-content-type-options')?.toLowerCase() === 'nosniff';
 
-  return [
-    {
-      attackId: 'anonymous_api_note_read',
-      expected: '2단계에서는 비로그인 API 요청으로 가상 메모 4개 확인',
-      observed: apiVisible
-        ? '통과: API 응답에서 확인 표시와 가상 메모 4개 확인'
-        : `실패: API 응답 조건 불충족 (HTTP ${apiResponse.status})`,
-    },
-    {
-      attackId: 'static_note_file_removed',
-      expected: '기존 /data.json 요청은 HTTP 404',
-      observed: staticRemoved
-        ? '통과: /data.json은 HTTP 404'
-        : `실패: /data.json이 HTTP ${staticResponse.status} 반환`,
-    },
-    {
-      attackId: 'deployment_identity',
-      expected: '/aleph.json에서 2단계 배포 식별 정보 확인',
-      observed: identityValid
-        ? '통과: 2단계 배포 식별 정보 확인'
-        : `실패: 배포 식별 정보 조건 불충족 (HTTP ${identityResponse.status})`,
-    },
-    {
-      attackId: 'page_security_header',
-      expected: '첫 화면이 HTTP 200이며 nosniff 헤더 제공',
-      observed: headerValid
-        ? '통과: 첫 화면 HTTP 200 및 nosniff 헤더 확인'
-        : `실패: 첫 화면 또는 헤더 조건 불충족 (HTTP ${pageResponse.status})`,
-    },
-  ];
+  record(
+    'page_security_header',
+    '첫 화면 HTTP 200 및 nosniff 헤더 제공',
+    headerValid,
+    `첫 화면 HTTP ${page.status}, nosniff ${headerValid ? '확인' : '조건 불충족'}`
+  );
+
+  return results;
 }
