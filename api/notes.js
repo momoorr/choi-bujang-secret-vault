@@ -53,18 +53,20 @@ function parseId(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) {
     throw new Error('invalid_id');
   }
+
   const id = String(value);
-  if (!/^[1-9][0-9]{0,18}$/.test(id)) {
-    throw new Error('invalid_id');
-  }
-  if (BigInt(id) > 9223372036854775807n) {
+  if (
+    !/^[1-9][0-9]{0,18}$/.test(id) ||
+    BigInt(id) > 9223372036854775807n
+  ) {
     throw new Error('invalid_id');
   }
   return id;
 }
 
 function noteFields(body) {
-  const content = body.content ?? body.body;
+  const content = body.body ?? body.content;
+
   if (
     typeof body.title !== 'string' ||
     !body.title.trim() ||
@@ -75,11 +77,16 @@ function noteFields(body) {
   ) {
     throw new Error('invalid_fields');
   }
+
   return { title: body.title.trim(), content };
 }
 
 function present(note) {
-  return { ...note, body: note.content };
+  return {
+    id: note.id,
+    title: note.title,
+    body: note.content,
+  };
 }
 
 export default async function handler(req, res) {
@@ -87,7 +94,6 @@ export default async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   const methods = ['GET', 'POST', 'PUT', 'DELETE'];
-
   if (!methods.includes(req.method)) {
     res.setHeader('Allow', methods.join(', '));
     return res.status(405).json({
@@ -116,13 +122,29 @@ export default async function handler(req, res) {
     });
   }
 
-  let body;
+  const userId = identity.userId;
   let id;
   let fields;
 
   try {
+    // URL에서 소유자를 지정하는 요청은 받지 않습니다.
+    if (Object.hasOwn(req.query ?? {}, 'owner_id')) {
+      return res.status(403).json({
+        error: '요청에서 소유자를 지정할 수 없습니다.',
+      });
+    }
+
+    let body;
     if (req.method === 'POST' || req.method === 'PUT') {
       body = parseBody(req.body);
+
+      // 새 소유자는 서버가 지정하며 소유자 변경은 허용하지 않습니다.
+      if (Object.hasOwn(body, 'owner_id')) {
+        return res.status(403).json({
+          error: '요청에서 소유자를 지정하거나 변경할 수 없습니다.',
+        });
+      }
+
       fields = noteFields(body);
     }
 
@@ -157,6 +179,7 @@ export default async function handler(req, res) {
           .from('notes')
           .select(columns)
           .eq('id', id)
+          .eq('owner_id', userId)
           .maybeSingle();
 
         if (error) throw error;
@@ -165,18 +188,26 @@ export default async function handler(req, res) {
             error: '메모를 찾을 수 없습니다.',
           });
         }
+
         return res.status(200).json(present(data));
       }
 
       const { data, error } = await database
         .from('notes')
         .select(columns)
+        .eq('owner_id', userId)
         .order('id', { ascending: true });
 
       if (error) throw error;
+
       return res.status(200).json({
         sampleMarker: config.sampleMarker,
-        notes: data.map(present),
+        // 기존 화면의 내용 표시와 수정·삭제 버튼을 유지합니다.
+        notes: data.map((note) => ({
+          ...present(note),
+          content: note.content,
+          owner_id: note.owner_id,
+        })),
       });
     }
 
@@ -185,7 +216,7 @@ export default async function handler(req, res) {
         .from('notes')
         .insert({
           ...fields,
-          owner_id: identity.userId,
+          owner_id: userId,
         })
         .select(columns)
         .single();
@@ -197,9 +228,12 @@ export default async function handler(req, res) {
     if (req.method === 'PUT') {
       const { data, error } = await database
         .from('notes')
-        .update(fields)
+        .update({
+          ...fields,
+          owner_id: userId,
+        })
         .eq('id', id)
-        .eq('owner_id', identity.userId)
+        .eq('owner_id', userId)
         .select(columns)
         .maybeSingle();
 
@@ -209,6 +243,7 @@ export default async function handler(req, res) {
           error: '수정할 메모를 찾을 수 없습니다.',
         });
       }
+
       return res.status(200).json(present(data));
     }
 
@@ -216,7 +251,7 @@ export default async function handler(req, res) {
       .from('notes')
       .delete()
       .eq('id', id)
-      .eq('owner_id', identity.userId)
+      .eq('owner_id', userId)
       .select('id')
       .maybeSingle();
 
@@ -226,6 +261,7 @@ export default async function handler(req, res) {
         error: '삭제할 메모를 찾을 수 없습니다.',
       });
     }
+
     return res.status(200).json({
       id: data.id,
       deleted: true,

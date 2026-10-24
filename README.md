@@ -87,3 +87,30 @@ content 대신 body도 지원합니다.
 로컬 문법 검사와 빌드는 통과했습니다.
 3단계의 실제 배포·로그인·메모 관리 동작은 아직 확인 전입니다.
 과거 커밋과 이전 배포의 공개 메모 복사본은 남아 있을 수 있습니다.
+
+
+## 4단계: 메모 소유자별 접근 제한
+
+이 절은 이전 단계 설명보다 우선합니다.
+
+- 서버가 검증한 사용자 ID와 notes.owner_id를 비교하여 목록·개별 조회·수정·삭제를 본인 메모로 제한합니다.
+- 추가 시 owner_id는 검증된 사용자 ID로 저장합니다.
+- URL·본문의 owner_id 지정 요청은 거부합니다.
+- 수정은 기존 행의 소유자를 검사하고, 새 행의 소유자도 본인으로 유지합니다.
+- 개별 메모 응답은 {id,title,body}이며 수정 본문은 {title,body}를 지원합니다.
+- GET·POST·PUT·DELETE /api/notes를 allowedRoutes에 기록합니다.
+- 학습 DB에서 기존 가상 메모 네 건은 A, 시험 메모 한 건은 B에 연결했습니다.
+- notes의 RLS를 활성화하고 본인 행에만 SELECT·INSERT·UPDATE·DELETE를 허용하는 정책을 적용했습니다.
+- 권한 조회 결과 anon의 표 권한은 없고 authenticated에는 SELECT·INSERT·UPDATE·DELETE만 있습니다.
+- 서버 전용 키를 사용하는 앱 API는 RLS와 별도로 소유자를 검사합니다.
+
+확인 상태:
+- API 문법 검사와 로컬 빌드 통과.
+- 실제 4단계 배포 및 A/B 정상·거부 요청 검사는 아직 미실행.
+
+재실행:
+1. npm.cmd ci
+2. npm.cmd run build -- --local
+3. 커밋·푸시 후 배포 완료 확인.
+4. A/B 각각 로그인하여 본인 메모 CRUD와 상대 메모 접근 거부 확인.
+5. npm.cmd run bundle 후 artifacts/submission.json 점검.
