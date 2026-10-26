@@ -25,6 +25,10 @@
     {
       "method": "DELETE",
       "path": "/api/notes"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth"
     }
   ],
   "originalApiUrl": "https://qcqmmniyvysvhlbrdhln.supabase.co/rest/v1/notes",

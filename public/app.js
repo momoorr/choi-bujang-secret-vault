@@ -1,10 +1,3 @@
-import { createClient } from
-  'https://esm.sh/@supabase/supabase-js@2.117.2';
-import {
-  SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY,
-} from './supabase-config.js';
-
 const $ = (selector) => document.querySelector(selector);
 const authForm = $('#auth-form');
 const noteForm = $('#note-form');
@@ -17,11 +10,21 @@ const titleInput = $('#note-title');
 const contentInput = $('#note-content');
 const logout = $('#logout');
 
-let client;
+const storageKey = 'vault-session-v1';
 let session = null;
 let editingId = null;
 let generation = 0;
 let busy = false;
+let refreshing = null;
+
+function saveSession(next) {
+  if (next) {
+    sessionStorage.setItem(storageKey, JSON.stringify(next));
+  } else {
+    sessionStorage.removeItem(storageKey);
+  }
+  session = next;
+}
 
 function resetEditor() {
   editingId = null;
@@ -39,6 +42,7 @@ function setBusy(value) {
 async function task(action) {
   if (busy) return;
   setBusy(true);
+
   try {
     await action();
   } catch (error) {
@@ -49,17 +53,88 @@ async function task(action) {
   }
 }
 
+async function authRequest(action, fields = {}, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch('/api/auth', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ action, ...fields }),
+    cache: 'no-store',
+    credentials: 'same-origin',
+    signal: AbortSignal.timeout(20000),
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(
+      result?.error || '인증 요청에 실패했습니다.'
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return result;
+}
+
+function validSession(value) {
+  return (
+    typeof value?.access_token === 'string' &&
+    typeof value?.refresh_token === 'string' &&
+    Number.isFinite(value?.expires_at) &&
+    typeof value?.user?.id === 'string'
+  );
+}
+
+async function currentSession() {
+  if (!session) throw new Error('다시 로그인하세요.');
+
+  if (session.expires_at > Date.now() / 1000 + 60) {
+    return session;
+  }
+
+  if (!refreshing) {
+    const previous = session;
+    refreshing = (async () => {
+      try {
+        const result = await authRequest('refresh', {
+          refresh_token: previous.refresh_token,
+        });
+
+        if (
+          !validSession(result.session) ||
+          result.session.user.id !== previous.user.id
+        ) {
+          throw new Error('다시 로그인하세요.');
+        }
+
+        if (session !== previous) {
+          throw new Error('로그인 상태가 바뀌었습니다.');
+        }
+
+        saveSession(result.session);
+        return session;
+      } catch (error) {
+        if (session === previous && error.status === 401) {
+          saveSession(null);
+          await showSession(null);
+        }
+        throw error;
+      } finally {
+        refreshing = null;
+      }
+    })();
+  }
+
+  return refreshing;
+}
+
 async function api(method, id, body) {
   const expectedUser = session?.user.id;
-  const { data, error } = await client.auth.getSession();
-  const current = data?.session;
+  const current = await currentSession();
 
-  if (
-    error ||
-    !current ||
-    !expectedUser ||
-    current.user.id !== expectedUser
-  ) {
+  if (!expectedUser || current.user.id !== expectedUser) {
     throw new Error('로그인 상태가 바뀌었습니다. 다시 로그인하세요.');
   }
 
@@ -81,9 +156,17 @@ async function api(method, id, body) {
   });
 
   const result = await response.json().catch(() => null);
+
+  if (response.status === 401) {
+    saveSession(null);
+    await showSession(null);
+    throw new Error('로그인이 만료됐습니다. 다시 로그인하세요.');
+  }
+
   if (!response.ok) {
     throw new Error(result?.error || '메모 요청에 실패했습니다.');
   }
+
   return result;
 }
 
@@ -91,8 +174,9 @@ function renderNote(note) {
   const item = document.createElement('li');
   const title = document.createElement('strong');
   const content = document.createElement('span');
+
   title.textContent = note.title;
-  content.textContent = note.content ?? note.body;
+  content.textContent = note.body ?? note.content;
   item.append(title, content);
 
   if (note.owner_id === session?.user.id) {
@@ -103,7 +187,7 @@ function renderNote(note) {
     edit.addEventListener('click', () => {
       editingId = note.id;
       titleInput.value = note.title;
-      contentInput.value = note.content ?? note.body;
+      contentInput.value = note.body ?? note.content;
       $('#editor-title').textContent = '메모 수정';
       titleInput.focus();
     });
@@ -114,6 +198,7 @@ function renderNote(note) {
     remove.disabled = busy;
     remove.addEventListener('click', () => {
       if (!confirm('이 메모를 삭제할까요?')) return;
+
       void task(async () => {
         await api('DELETE', note.id);
         if (String(editingId) === String(note.id)) resetEditor();
@@ -124,6 +209,7 @@ function renderNote(note) {
 
     item.append(edit, remove);
   }
+
   return item;
 }
 
@@ -175,27 +261,26 @@ async function authenticate(isSignup) {
   if (!authForm.reportValidity()) return;
 
   await task(async () => {
-    const credentials = {
-      email: email.value.trim(),
-      password: password.value,
-    };
-    const { data, error } = isSignup
-      ? await client.auth.signUp(credentials)
-      : await client.auth.signInWithPassword(credentials);
+    const result = await authRequest(
+      isSignup ? 'signup' : 'login',
+      {
+        email: email.value.trim(),
+        password: password.value,
+      }
+    );
 
-    if (error) {
-      throw new Error(
-        '인증하지 못했습니다. 입력값과 이메일 인증 여부를 확인하세요.'
-      );
-    }
-
-    if (isSignup && !data.session) {
-      message.textContent =
-        '이메일로 온 인증 링크를 확인한 뒤 로그인하세요.';
+    if (isSignup && result.confirmationRequired) {
+      message.textContent = '이메일로 온 인증 링크를 확인한 뒤 로그인하세요.';
       return;
     }
 
-    await showSession(data.session);
+    if (!validSession(result.session)) {
+      throw new Error('로그인 정보를 확인하지 못했습니다.');
+    }
+
+    resetEditor();
+    saveSession(result.session);
+    await showSession(session);
   });
 }
 
@@ -210,8 +295,9 @@ $('#signup').addEventListener('click', () => {
 
 logout.addEventListener('click', () => {
   void task(async () => {
-    const { error } = await client.auth.signOut();
-    if (error) throw new Error('로그아웃하지 못했습니다.');
+    const current = await currentSession();
+    await authRequest('logout', {}, current.access_token);
+    saveSession(null);
     await showSession(null);
     message.textContent = '로그아웃했습니다.';
   });
@@ -227,7 +313,7 @@ noteForm.addEventListener('submit', (event) => {
     const id = editingId;
     await api(id == null ? 'POST' : 'PUT', id, {
       title: titleInput.value,
-      content: contentInput.value,
+      body: contentInput.value,
     });
 
     resetEditor();
@@ -239,23 +325,23 @@ noteForm.addEventListener('submit', (event) => {
 });
 
 try {
-  if (!SUPABASE_PUBLISHABLE_KEY.startsWith('sb_publishable_')) {
-    throw new Error('invalid_public_key');
+  // 이전 브라우저 SDK가 저장한 로그인 복사본을 정리합니다.
+  localStorage.removeItem('sb-qcqmmniyvysvhlbrdhln-auth-token');
+
+  const stored = JSON.parse(
+    sessionStorage.getItem(storageKey) || 'null'
+  );
+
+  if (validSession(stored)) {
+    session = stored;
+    await currentSession();
+    await showSession(session);
+  } else {
+    saveSession(null);
+    await showSession(null);
   }
-
-  client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
-  client.auth.onAuthStateChange((_event, next) => {
-    setTimeout(() => { void showSession(next); }, 0);
-  });
-
-  const { data, error } = await client.auth.getSession();
-  if (error) throw error;
-  await showSession(data.session);
 } catch {
-  authForm.hidden = true;
-  noteForm.hidden = true;
-  logout.hidden = true;
-  account.textContent = '로그인 연결을 초기화하지 못했습니다.';
-  message.textContent = 'Supabase URL과 공개용 키 설정을 확인하세요.';
+  saveSession(null);
+  await showSession(null);
+  message.textContent = '로그인 상태를 복원하지 못했습니다. 다시 로그인하세요.';
 }
