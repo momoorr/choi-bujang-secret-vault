@@ -114,3 +114,25 @@ content 대신 body도 지원합니다.
 3. 커밋·푸시 후 배포 완료 확인.
 4. A/B 각각 로그인하여 본인 메모 CRUD와 상대 메모 접근 거부 확인.
 5. npm.cmd run bundle 후 artifacts/submission.json 점검.
+
+## 5단계: 메모 요청을 서버 API로 통합
+
+이 절은 이전 단계 설명보다 우선합니다.
+
+- 브라우저의 메모 CRUD는 기존 /api/notes만 사용하므로 호출 코드는 변경하지 않았습니다.
+- Supabase Auth 로그인은 유지합니다.
+- public.notes의 PUBLIC·anon·authenticated 직접 접근 권한을 회수했습니다.
+- 기존 메모, RLS 정책, 서버 전용 권한과 API의 로그인·소유자 검사는 유지합니다.
+- originalApiUrl에 쿼리 없는 원본 메모 REST API 주소를 기록했습니다.
+- 권한 회수 후 A 계정의 정상 CRUD를 확인했습니다.
+- A 로그인 토큰으로 원본 DB 직접 조회가 거부됐습니다.
+- 공개 키만 사용한 원본 DB GET·PATCH가 권한 오류로 거부됐습니다.
+- 로컬 빌드 통과. 5단계 배포와 공식 채점은 아직 미실행입니다.
+- 브라우저 공개 키 제거 가점은 아직 구현하지 않았습니다.
+
+재확인:
+1. npm.cmd run build -- --local
+2. 커밋·푸시 후 /aleph.json의 단계와 커밋 확인
+3. 앱의 정상 CRUD 및 비로그인·타인 메모 접근 거부 확인
+4. 원본 DB 직접 접근 거부 확인
+5. npm.cmd run bundle 후 점검 결과 확인

@@ -1,5 +1,5 @@
 {
-  "step": 4,
+  "step": 5,
   "repoUrl": "https://github.com/momoorr/choi-bujang-secret-vault",
   "publicAppUrl": "https://choi-bujang-secret-vault-kappa-nine.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -27,6 +27,6 @@
       "path": "/api/notes"
     }
   ],
-  "originalApiUrl": null,
+  "originalApiUrl": "https://qcqmmniyvysvhlbrdhln.supabase.co/rest/v1/notes",
   "restoreRoute": null
 }
