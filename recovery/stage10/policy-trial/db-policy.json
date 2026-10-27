@@ -1,0 +1,163 @@
+{
+    "table": "public.notes",
+    "schema": "vault.db-policy-backup.v1",
+    "policies": [
+        {
+            "cmd": "DELETE",
+            "qual": "(( SELECT auth.uid() AS uid) = owner_id)",
+            "roles": [
+                "authenticated"
+            ],
+            "tablename": "notes",
+            "permissive": "PERMISSIVE",
+            "policyname": "notes_delete_own",
+            "schemaname": "public",
+            "with_check": null
+        },
+        {
+            "cmd": "INSERT",
+            "qual": null,
+            "roles": [
+                "authenticated"
+            ],
+            "tablename": "notes",
+            "permissive": "PERMISSIVE",
+            "policyname": "notes_insert_own",
+            "schemaname": "public",
+            "with_check": "(( SELECT auth.uid() AS uid) = owner_id)"
+        },
+        {
+            "cmd": "SELECT",
+            "qual": "(( SELECT auth.uid() AS uid) = owner_id)",
+            "roles": [
+                "authenticated"
+            ],
+            "tablename": "notes",
+            "permissive": "PERMISSIVE",
+            "policyname": "notes_select_own",
+            "schemaname": "public",
+            "with_check": null
+        },
+        {
+            "cmd": "UPDATE",
+            "qual": "(( SELECT auth.uid() AS uid) = owner_id)",
+            "roles": [
+                "authenticated"
+            ],
+            "tablename": "notes",
+            "permissive": "PERMISSIVE",
+            "policyname": "notes_update_own",
+            "schemaname": "public",
+            "with_check": "(( SELECT auth.uid() AS uid) = owner_id)"
+        }
+    ],
+    "privileges": [
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "DELETE"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "INSERT"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "REFERENCES"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "SELECT"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "TRIGGER"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "TRUNCATE"
+        },
+        {
+            "role": "anon",
+            "allowed": false,
+            "privilege": "UPDATE"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "DELETE"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "INSERT"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "REFERENCES"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "SELECT"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "TRIGGER"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "TRUNCATE"
+        },
+        {
+            "role": "authenticated",
+            "allowed": false,
+            "privilege": "UPDATE"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "DELETE"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "INSERT"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "REFERENCES"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "SELECT"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "TRIGGER"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "TRUNCATE"
+        },
+        {
+            "role": "service_role",
+            "allowed": true,
+            "privilege": "UPDATE"
+        }
+    ],
+    "rls_forced": false,
+    "rls_enabled": true
+}

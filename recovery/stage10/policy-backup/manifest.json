@@ -1,0 +1,30 @@
+{
+  "schema": "vault.policy-backup.v1",
+  "commit": "9fef014be054129142b60777600dd7b81ecac5a7",
+  "files": [
+    {
+      "file": "src/decider.mjs",
+      "sha256": "077031d06ebfc65e5859577268e53ab86468953c8c0bd291b7d2e31510fce3bc"
+    },
+    {
+      "file": "src/detect.mjs",
+      "sha256": "dffbf7bde076f46b94e366ec5d0d35d22bc4c7f6ae1402161957fce03e71ba30"
+    },
+    {
+      "file": "src/verify-login.mjs",
+      "sha256": "7e642c89438769b850978ce05f18bad1a253cb2f52ba0b1e3792cf78b4204275"
+    },
+    {
+      "file": "aleph.config.json",
+      "sha256": "9d4ab53dc86e559990bf0640b60aaee08e728f788c61826ac4a66a07a943428c"
+    },
+    {
+      "file": "api/notes.js",
+      "sha256": "d15aa3ee658da6cd53b32d409c025fc5efdcc02ab4665611d08630e760583b39"
+    },
+    {
+      "file": "db-policy.json",
+      "sha256": "49f90ed534d072b8338df4143a31384ecce54d62a899e6b7eac3c23a431a735e"
+    }
+  ]
+}

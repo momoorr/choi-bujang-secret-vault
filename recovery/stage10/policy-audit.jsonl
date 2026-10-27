@@ -1,0 +1,2 @@
+{"at":"2026-10-27T02:22:04.590Z","action":"prepare_weakened_trial","baselineCommit":"9fef014be054129142b60777600dd7b81ecac5a7","scope":"local_policy_trial_only","files":["src/decider.mjs"]}
+{"at":"2026-10-27T02:24:34.376Z","action":"restore_verified_trial","baselineCommit":"9fef014be054129142b60777600dd7b81ecac5a7","scope":"local_policy_trial_only","files":["src/decider.mjs"]}
