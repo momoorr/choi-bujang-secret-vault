@@ -238,20 +238,57 @@ resource_not_allowed 이유 코드의 운영 등록부 호환 여부는 아직 �
 
 ### 정책 백업과 복원
 
+안전 정책은 src/decider.mjs의 접근 규칙, aleph.config.json의 allowedRoutes, DB 접근 정책을 포함합니다.
+
+- 기준 버전: 9단계 저장점
 - 기준 커밋: 9fef014be054129142b60777600dd7b81ecac5a7
-- 백업 위치: recovery/stage10/policy-backup
-- 판정기·탐지기·로그인 검증기·앱 설정·메모 API·DB 정책 정보를 백업하고 6개 파일의 SHA-256을 재검증했습니다.
-- DB 정책 정보는 notes 테이블의 RLS 설정·정책 4개·역할별 권한 21개입니다.
-- 시험용 사본의 자원 검사 한 줄만 완화한 뒤 변경 범위를 확인하고 복원했습니다.
-- 실제 운영 정책과 DB 권한은 변경하지 않았습니다.
-- 감사 기록은 recovery/stage10/policy-audit.jsonl에 보존합니다.
+- 검증할 백업: recovery/stage10/policy-backup
+- 복원 대상: recovery/stage10/policy-trial
+- 감사 기록: recovery/stage10/policy-audit.jsonl
+- 실제 운영 정책과 DB 권한은 변경하지 않습니다.
 
-재현 명령:
-- node scripts/policy-recovery.mjs plan
-- node scripts/policy-recovery.mjs restore --confirm-trial
+#### 복원 전 확인 순서
 
-복원은 policy-trial 폴더만 대상으로 합니다. 백업 누락·해시 불일치 시 중단합니다.
-복원된 시험용 판정기의 정상 허용·미등록 거부·추가 인증·목록 거부·강사 자료 거부 5개 검사를 통과했습니다.
+1. node scripts/policy-recovery.mjs plan을 실행합니다.
+2. 스크립트가 백업 manifest.json과 백업 파일 6개를 디스크에서 다시 읽습니다.
+3. 파일 목록과 각 파일의 SHA-256을 manifest와 대조합니다. 백업이 없거나 해시가 다르면 즉시 중단하고 복원하지 않습니다.
+4. 출력된 기준 커밋이 위의 기준 커밋과 일치하는지 확인합니다. 다르면 중단합니다.
+5. 백업과 시험용 사본의 해시 차이를 확인하고, 복원할 파일과 변경 전후 해시를 검토합니다.
+6. git diff --no-index -- recovery/stage10/policy-backup/src/decider.mjs recovery/stage10/policy-trial/src/decider.mjs로 실제 변경 줄을 확인합니다.
+7. 이번 시험에서 변경 범위는 자원 경로 검사 조건 한 줄뿐입니다. 예상하지 않은 변경이 있으면 중단합니다.
+8. 위 검증이 모두 끝난 뒤에만 node scripts/policy-recovery.mjs restore --confirm-trial을 실행합니다.
+9. restore도 쓰기 직전에 백업 6개를 다시 읽어 해시를 검증하며, 실패하면 복원을 중단합니다.
+10. 복원 후 6개 파일의 해시를 다시 확인하고 감사 기록을 보존합니다. plan을 다시 실행해 변경 목록이 []인지 확인합니다.
+
+시험용 사본에서 if (!noteRead && !noticeRead)를 if (false)로 완화한 한 줄을 검토하고 복원했습니다.
+복원 후 백업 6개 해시 일치와 변경 목록 []를 확인했습니다.
+다른 서비스 규칙과 기존 감사 기록은 보존했습니다.
+
+#### 복원 후 재시험 순서
+
+1. npm.cmd run decider:test
+   - 실행 결과: 등록 기기 허용, 미등록 기기 거부, 복합 이상 접속 추가 인증, 재인증 확인 후 허용의 4개 가상 테스트 통과.
+2. npm.cmd run fixture:7
+   - 실행 결과: 정상 사건 allow, 복합 이상 사건 step_up.
+3. npm.cmd run detect:test
+   - 실행 결과: 가상 사건 6개 통과. 120건 정상, 121건 이상 회수 제안, 다른 사용자와 시간 구간 밖의 사건은 합산하지 않음.
+4. A계정으로 로그인하고 GET /api/notes/1 정상 요청을 보냅니다.
+   - 실행 결과: HTTP 200.
+5. A계정에서 로그아웃한 뒤 B계정으로 로그인하고 GET /api/notes/1을 요청합니다.
+   - B의 A 메모 접근은 HTTP 404로 거부되어야 합니다.
+   - 실행 결과: A 정상 요청 HTTP 200 확인 후 로그아웃하고 B계정으로 전환했습니다. B의 A 메모 요청은 HTTP 404로 거부됐고, 이어서 B 본인 메모는 HTTP 200을 확인했습니다.
+6. B 본인 메모 GET /api/notes/6은 HTTP 200이어야 합니다.
+   - 메모 복구 후 실제 HTTP 200을 확인했습니다.
+
+로컬 가상 테스트와 복원된 시험용 판정기 직접 검사 5개는 통과했습니다.
+실제 운영 정책은 변경하지 않았으므로 운영 정책 복원을 실행했다고 주장하지 않습니다.
+
+#### 미실행 시험
+
+- 운영 엔진의 실제 mTLS·추가 인증·접속 회수 연결 시험
+- 메모 삭제 후 재생성 경로와 동시 변경 충돌 시험
+
+미실행 항목은 성공 결과로 기재하지 않습니다.
 
 ### 가상 메모 한 건 복구
 
