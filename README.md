@@ -149,3 +149,21 @@ content 대신 body도 지원합니다.
 - 인증 API와 브라우저 코드 문법 검사, 로컬 빌드, 공개 파일의 키 패턴·삭제 파일 참조 검사 통과.
 - 변경 후 실제 로그인·갱신·로그아웃·CRUD 및 공식 재채점은 아직 미실행입니다.
 - 배포 후 A/B 로그인과 정상 CRUD, 새로고침, 로그아웃 및 접근 거부를 다시 확인합니다.
+
+## 6단계 저장점
+
+- src/decider.mjs에 device_registered 규칙을 구현했습니다.
+- 엔진이 검증해 전달한 deviceRegistered가 정확히 true일 때만 허용합니다.
+- false이거나 필드가 없으면 deny와 device_not_registered를 반환합니다.
+- 응답은 schema, requestId, decision, reasonCode, ruleIds의 다섯 필드를 유지합니다.
+- aleph.config.json과 빌드·배포 식별·공격 점검의 단계 번호를 6으로 맞췄습니다.
+
+### 재현 절차와 확인 결과
+
+1. npm.cmd run decider:test
+   - 등록 기기의 정상 가상 요청: 통과
+   - 미등록 기기의 가상 요청: 통과
+2. npm.cmd run build -- --local
+   - 빌드 통과
+
+가상 요청 테스트는 실제 기기 등록·mTLS 연결 또는 공식 심판 통과의 증거가 아닙니다.
