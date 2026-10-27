@@ -1,6 +1,7 @@
 export const RULE_IDS = Object.freeze([
   'device_registered',
   'step_up_required',
+  'resource_scope',
 ]);
 
 export async function decide(request) {
@@ -15,6 +16,52 @@ export async function decide(request) {
   if (request.deviceRegistered !== true) {
     return respond('deny', 'device_not_registered', [
       'device_registered',
+    ]);
+  }
+
+
+  // 서비스·메서드·실제 경로·엔진의 경로 모양을 함께 확인합니다.
+  const path = request.path;
+  const route = request.route;
+  const method = request.method;
+
+  const notePaths = ['/notes', '/api/notes'];
+  const noticePaths = ['/notices', '/api/notices'];
+
+  const reservedIds = new Set([
+    'export', 'search', 'bulk', 'all', 'list',
+  ]);
+
+  const singleResource = (base) => {
+    if (typeof path !== 'string' || !path.startsWith(base + '/')) {
+      return false;
+    }
+
+    const id = path.slice(base.length + 1);
+
+    return id.length > 0 &&
+      !/[\/\\%?#\s]/u.test(id) &&
+      !reservedIds.has(id.toLowerCase()) &&
+      route === `${method} ${base}/:id`;
+  };
+
+  const noteRead =
+    request.service === 'notes' &&
+    method === 'GET' &&
+    notePaths.some(singleResource);
+
+  const noticeRead =
+    request.service === 'notices' &&
+    method === 'GET' &&
+    noticePaths.some((base) =>
+      (path === base && route === `GET ${base}`) ||
+      singleResource(base)
+    );
+
+  if (!noteRead && !noticeRead) {
+    return respond('deny', 'resource_not_allowed', [
+      'device_registered',
+      'resource_scope',
     ]);
   }
 

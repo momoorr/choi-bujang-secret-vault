@@ -191,3 +191,25 @@ content 대신 body도 지원합니다.
 
 위 결과는 가상 요청 테스트입니다.
 실제 엔진의 같은 사용자 재로그인 확인 계약과 실제 자료 차단·재로그인 후 허용 흐름은 아직 검증하지 않았습니다.
+
+## 8단계 저장점
+
+- 메모 한 건 경로 /api/notes/:id를 추가했습니다.
+- 기존 메모 API의 검증된 사용자와 owner_id 비교를 재사용합니다.
+- 가상 반 공지 class-welcome을 /api/notices/:id로 구분했습니다.
+- 공지 API는 로그인한 사용자의 GET만 허용합니다.
+- resource_scope 규칙으로 메모 한 건과 공지 읽기를 구분합니다.
+- 메모 전체 목록, export, 공지 쓰기, 강사 자료, 미등록 서비스, 중첩 경로, 경로 모양 불일치를 판정기에서 거부합니다.
+- 기존 기기 등록 검사와 복합 이상 접속 추가 인증 규칙을 유지했습니다.
+- allowedRoutes에는 GET /api/notes/:id와 GET /api/notices/:id만 등록했습니다.
+
+### 확인 결과
+
+- npm.cmd run decider:test: 4개 가상 테스트 통과
+- npm.cmd run fixture:7: 정상 allow, 복합 이상 step_up
+- 자원 경로 가상 테스트: 9개 통과
+- npm.cmd run build -- --local: 통과
+
+새 경로의 실제 배포 후 API 동작과 A/B 소유자 분리는 아직 확인하지 않았습니다.
+resource_not_allowed 이유 코드의 운영 등록부 호환 여부는 아직 확인하지 못했습니다.
+가상 테스트 통과를 실제 API 검사나 공식 심판 통과로 간주하지 않습니다.
