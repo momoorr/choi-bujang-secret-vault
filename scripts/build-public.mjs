@@ -1,4 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { deploymentIdentity } from './deployment-identity.mjs';
 
@@ -9,11 +15,20 @@ const config = JSON.parse(
   await readFile(resolve(root, 'aleph.config.json'), 'utf8')
 );
 
-if (config.step !== 10) {
-  throw new Error('aleph.config.json의 step을 10로 설정하세요.');
+if (config.step !== 11) {
+  throw new Error('aleph.config.json의 step을 11으로 설정하세요.');
 }
 
 await mkdir(publicDir, { recursive: true });
+await mkdir(resolve(publicDir, 'vendor'), { recursive: true });
+
+await copyFile(
+  resolve(
+    root,
+    'node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js'
+  ),
+  resolve(publicDir, 'vendor/webauthn-browser.min.js')
+);
 
 // 이전에 생성된 공개 메모 파일을 제거합니다.
 await rm(resolve(publicDir, 'data.json'), { force: true });

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { verifyDevice } from '../src/verify-device.mjs';
 import {
   readNoteBackup,
   noteHash,
@@ -27,24 +28,34 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'method_not_allowed' });
+    return res.status(405).json({
+      error: 'method_not_allowed',
+    });
   }
 
   if (!req.headers.authorization) {
-    return res.status(401).json({ error: 'login_required' });
+    return res.status(401).json({
+      error: 'login_required',
+    });
   }
 
   if (
     req.headers.origin &&
     req.headers.origin !== new URL(config.publicAppUrl).origin
   ) {
-    return res.status(403).json({ error: 'origin_not_allowed' });
+    return res.status(403).json({
+      error: 'origin_not_allowed',
+    });
   }
 
-  if (!/^application\/json(?:;|$)/i.test(
-    req.headers['content-type'] || ''
-  )) {
-    return res.status(415).json({ error: 'json_required' });
+  if (
+    !/^application\/json(?:;|$)/i.test(
+      req.headers['content-type'] || ''
+    )
+  ) {
+    return res.status(415).json({
+      error: 'json_required',
+    });
   }
 
   let database;
@@ -58,7 +69,8 @@ export default async function handler(req, res) {
     if (
       !url ||
       !secretKey ||
-      new URL(url).origin + '/auth/v1' !== config.identityProvider?.issuer
+      new URL(url).origin + '/auth/v1' !==
+        config.identityProvider?.issuer
     ) {
       throw new Error('invalid_server_configuration');
     }
@@ -71,7 +83,9 @@ export default async function handler(req, res) {
     identity = await verifyLogin(req.headers.authorization);
 
     if (!identity) {
-      return res.status(401).json({ error: 'invalid_login' });
+      return res.status(401).json({
+        error: 'invalid_login',
+      });
     }
 
     backup = readNoteBackup(process.env.STAGE10_NOTE_BACKUP_JSON);
@@ -85,12 +99,36 @@ export default async function handler(req, res) {
     });
   } catch {
     audit('restore_configuration', 'unavailable');
-    return res.status(503).json({ error: 'restore_unavailable' });
+    return res.status(503).json({
+      error: 'restore_unavailable',
+    });
   }
 
   if (identity.userId !== backup.owner_id) {
     audit('restore_access', 'denied');
-    return res.status(403).json({ error: 'restore_not_allowed' });
+    return res.status(403).json({
+      error: 'restore_not_allowed',
+    });
+  }
+
+  try {
+    const device = await verifyDevice({
+      database,
+      userId: identity.userId,
+      token: req.headers['x-vault-device'],
+    });
+
+    if (!device) {
+      audit('restore_device', 'denied');
+      return res.status(403).json({
+        error: 'approved_device_required',
+      });
+    }
+  } catch {
+    audit('restore_device', 'unavailable');
+    return res.status(503).json({
+      error: 'device_verification_unavailable',
+    });
   }
 
   let body;
@@ -101,20 +139,24 @@ export default async function handler(req, res) {
       : req.body;
 
     const allowedKeys = new Set([
-      'action', 'confirm', 'expectedCurrentHash',
+      'action',
+      'confirm',
+      'expectedCurrentHash',
     ]);
 
     if (
       !body ||
       typeof body !== 'object' ||
       Array.isArray(body) ||
-      Object.keys(body).some(key => !allowedKeys.has(key)) ||
+      Object.keys(body).some((key) => !allowedKeys.has(key)) ||
       !['plan', 'restore'].includes(body.action)
     ) {
       throw new Error('invalid_request');
     }
   } catch {
-    return res.status(400).json({ error: 'invalid_restore_request' });
+    return res.status(400).json({
+      error: 'invalid_restore_request',
+    });
   }
 
   try {
@@ -127,7 +169,9 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     if (current && current.owner_id !== backup.owner_id) {
-      return res.status(409).json({ error: 'target_owner_mismatch' });
+      return res.status(409).json({
+        error: 'target_owner_mismatch',
+      });
     }
 
     const currentHash = current
@@ -141,6 +185,7 @@ export default async function handler(req, res) {
 
     if (body.action === 'plan') {
       audit('restore_plan', 'ready');
+
       return res.status(200).json({
         targetId: backup.id,
         ownerMatches: true,
@@ -155,18 +200,25 @@ export default async function handler(req, res) {
       body.confirm !== true ||
       !Object.hasOwn(body, 'expectedCurrentHash')
     ) {
-      return res.status(400).json({ error: 'confirmation_required' });
+      return res.status(400).json({
+        error: 'confirmation_required',
+      });
     }
 
     if (body.expectedCurrentHash !== currentHash) {
-      return res.status(409).json({ error: 'target_changed_review_again' });
+      return res.status(409).json({
+        error: 'target_changed_review_again',
+      });
     }
 
     if (currentHash !== BACKUP_SHA256) {
       if (current) {
         const { data: updated, error: updateError } = await database
           .from('notes')
-          .update({ title: backup.title, content: backup.body })
+          .update({
+            title: backup.title,
+            content: backup.body,
+          })
           .eq('id', backup.id)
           .eq('owner_id', backup.owner_id)
           .eq('title', current.title)
@@ -175,6 +227,7 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (updateError) throw updateError;
+
         if (!updated) {
           return res.status(409).json({
             error: 'target_changed_review_again',
@@ -196,6 +249,7 @@ export default async function handler(req, res) {
               error: 'target_changed_review_again',
             });
           }
+
           throw insertError;
         }
       }
@@ -222,6 +276,7 @@ export default async function handler(req, res) {
     }
 
     audit('restore_note', 'verified');
+
     return res.status(200).json({
       targetId: backup.id,
       restored: true,
@@ -230,6 +285,9 @@ export default async function handler(req, res) {
     });
   } catch {
     audit('restore_note', 'failed');
-    return res.status(502).json({ error: 'restore_failed' });
+
+    return res.status(502).json({
+      error: 'restore_failed',
+    });
   }
 }

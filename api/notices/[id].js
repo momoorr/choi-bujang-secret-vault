@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../../src/verify-login.mjs';
+import { verifyDevice } from '../../src/verify-device.mjs';
 
 const config = JSON.parse(
   readFileSync(new URL('../../aleph.config.json', import.meta.url), 'utf8')
 );
 
 let verifyLogin;
+let database;
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -25,15 +28,37 @@ export default async function handler(req, res) {
   }
 
   let identity;
-  try {
-    if (!verifyLogin) {
-      const secretKey = process.env.SUPABASE_SECRET_KEY;
-      if (!secretKey) throw new Error('missing_server_configuration');
 
-      verifyLogin = createLoginVerifier({
+  try {
+    if (!verifyLogin || !database) {
+      const url = process.env.SUPABASE_URL;
+      const secretKey = process.env.SUPABASE_SECRET_KEY;
+
+      if (
+        !url ||
+        !secretKey ||
+        new URL(url).origin + '/auth/v1' !==
+          config.identityProvider?.issuer
+      ) {
+        throw new Error('missing_server_configuration');
+      }
+
+      const client = createClient(url, secretKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      });
+
+      const verifier = createLoginVerifier({
         config,
         supabaseSecretKey: secretKey,
+        supabaseClient: client,
       });
+
+      database = client;
+      verifyLogin = verifier;
     }
 
     identity = await verifyLogin(req.headers.authorization);
@@ -46,6 +71,24 @@ export default async function handler(req, res) {
   if (!identity) {
     return res.status(401).json({
       error: 'invalid_login',
+    });
+  }
+
+  try {
+    const device = await verifyDevice({
+      database,
+      userId: identity.userId,
+      token: req.headers['x-vault-device'],
+    });
+
+    if (!device) {
+      return res.status(403).json({
+        error: 'approved_device_required',
+      });
+    }
+  } catch {
+    return res.status(503).json({
+      error: 'device_verification_unavailable',
     });
   }
 

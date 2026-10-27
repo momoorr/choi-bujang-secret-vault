@@ -1,3 +1,4 @@
+import { verifyDevice } from '../src/verify-device.mjs';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
@@ -119,6 +120,24 @@ export default async function handler(req, res) {
   if (!identity) {
     return res.status(401).json({
       error: '유효한 로그인 토큰이 필요합니다.',
+    });
+  }
+
+  try {
+    const device = await verifyDevice({
+      database,
+      userId: identity.userId,
+      token: req.headers['x-vault-device'],
+    });
+
+    if (!device) {
+      return res.status(403).json({
+        error: '승인된 기기의 인증이 필요합니다.',
+      });
+    }
+  } catch {
+    return res.status(503).json({
+      error: '기기 승인 상태를 확인하지 못했습니다.',
     });
   }
 
