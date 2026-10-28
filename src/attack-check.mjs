@@ -21,6 +21,7 @@ export async function runAttackChecks(config, { commit } = {}) {
       // URL 문자열과 GET 메서드를 명시합니다. 쓰기 요청은 보내지 않습니다.
       const response = await fetch(url, {
         method: 'GET',
+        alephEvidence: { caseId: attackId, requestKey: 'read' },
         ...(headers ? { headers } : {}),
         redirect: 'error',
         cache: 'no-store',
