@@ -124,9 +124,7 @@ export async function runAttackChecks(config, { commit } = {}) {
     results.push({
       attackId: 's1_current_public_surface',
       expected: '현재 방어 상태에서 GET /는 HTTP 200, GET /data.json은 HTTP 404',
-      observed: stage1.map((r) =>
-        `GET ${r.path}; HTTP ${r.status}; at=${r.receivedAt}`
-      ).join(' | '),
+      observed: 'not_run: 이 점검 ID로 별도 요청을 보내지 않음',
     });
   } else {
     notRun('s1_current_public_surface',
@@ -144,10 +142,10 @@ export async function runAttackChecks(config, { commit } = {}) {
   const stages = [
     ['s2_database_api',
       '정상: 로그인·승인 기기로 본인 메모 조회 HTTP 200; 거부: 비로그인 조회 HTTP 401 또는 403',
-      `정상 조회는 인증 정보 미사용으로 미실행; ${deniedObservation('anonymous_get_denied')}`],
+      '이 점검 ID로 별도 요청을 보내지 않음'],
     ['s3_verified_login',
       '정상: 검증된 로그인과 기기로 본인 메모 조회 HTTP 200; 거부: 잘못된 토큰 HTTP 401 또는 403',
-      `정상 조회는 인증 정보 미사용으로 미실행; ${deniedObservation('malformed_token_denied')}`],
+      '이 점검 ID로 별도 요청을 보내지 않음'],
     ['s4_owner_isolation',
       '정상: A/B가 본인 메모에 접근; 거부: 상대 메모 접근과 owner_id 변경',
       'A/B 인증을 사용한 읽기·추가·수정·삭제 및 소유자 변경 요청을 보내지 않음'],
