@@ -1,3 +1,4 @@
+import { stampResponse } from '../src/request-stamp.mjs';
 import { verifyDevice } from '../src/verify-device.mjs';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
@@ -91,6 +92,7 @@ function present(note) {
 }
 
 export default async function handler(req, res) {
+  stampResponse(res);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
 

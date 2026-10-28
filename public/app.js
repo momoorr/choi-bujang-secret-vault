@@ -1,3 +1,4 @@
+import { createOperationsView } from './operations-view.js';
 import {
   registerDevice,
   authenticateDevice,
@@ -30,6 +31,14 @@ let refreshing = null;
 let deviceApproved = false;
 let deviceSession = null;
 let expiryTimer = null;
+
+const operationsPanel = $('#operations-panel');
+const operationsView = createOperationsView({
+  root: $('#operations-root'),
+  load: loadOperations,
+  loadChecks: loadOperationChecks,
+  runTask: task,
+});
 
 // 로그인 정보와 기기 접속 증표는 메모리에만 유지합니다.
 function saveSession(next) {
@@ -64,6 +73,8 @@ function lockDevice(text) {
   deviceApproved = false;
   deviceSession = null;
   ++generation;
+  operationsPanel.hidden = true;
+  operationsView.clear();
 
   resetEditor();
   list.replaceChildren();
@@ -245,6 +256,91 @@ async function api(method, id, body) {
   }
 
   return result;
+}
+
+async function operationsRequest(path, method = 'GET') {
+  if (!hasDeviceSession()) {
+    throw new Error('\uAE30\uAE30 \uC778\uC99D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.');
+  }
+
+  const expectedGeneration = generation;
+  const expectedDevice = deviceSession;
+  const current = await currentSession();
+
+  assertCurrent(expectedGeneration, current.user.id);
+
+  if (
+    deviceSession !== expectedDevice ||
+    !hasDeviceSession()
+  ) {
+    throw new Error('\uAE30\uAE30 \uC0C1\uD0DC\uAC00 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4.');
+  }
+
+  const headers = {
+    Authorization: 'Bearer ' + current.access_token,
+    'X-Vault-Device': expectedDevice.token,
+  };
+
+  if (method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(path, {
+    method,
+    headers,
+    body: method === 'POST'
+      ? JSON.stringify({ action: 'run' })
+      : undefined,
+    cache: 'no-store',
+    signal: AbortSignal.timeout(
+      method === 'POST' ? 200000 : 20000
+    ),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  assertCurrent(expectedGeneration, current.user.id);
+
+  if (deviceSession !== expectedDevice) {
+    throw new Error('\uAE30\uAE30 \uC0C1\uD0DC\uAC00 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4.');
+  }
+
+  if (response.status === 401) {
+    await showSession(null);
+    throw new Error('\uB2E4\uC2DC \uB85C\uADF8\uC778\uD558\uC138\uC694.');
+  }
+
+  if (response.status === 403) {
+    lockDevice(
+      data?.error ||
+      '\uAE30\uAE30 \uC778\uC99D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.'
+    );
+    throw new Error(deviceStatus.textContent);
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error ||
+      '\uC791\uC804\uC2E4 \uC870\uD68C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.'
+    );
+  }
+
+  return {
+    data,
+    httpStatus: response.status,
+    requestId: response.headers.get('x-request-id'),
+  };
+}
+
+async function loadOperations() {
+  return operationsRequest('/api/operations');
+}
+
+async function loadOperationChecks(run = false) {
+  return operationsRequest(
+    '/api/operations-checks',
+    run === true ? 'POST' : 'GET'
+  );
 }
 
 function renderNote(note) {
@@ -459,7 +555,9 @@ deviceRefreshButton.addEventListener('click', () => {
       message.textContent = '승인 상태 다시 확인을 눌러 주세요.';
     }, Math.max(0, expiresAt - Date.now()));
 
+    operationsPanel.hidden = false;
     await loadNotes();
+    await operationsView.refresh();
   });
 });
 

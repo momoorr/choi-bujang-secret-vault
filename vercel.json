@@ -2,6 +2,14 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "public",
+  "functions": {
+    "api/operations.js": {
+      "includeFiles": "recovery/stage10/**"
+    },
+    "api/operations-checks.js": {
+      "maxDuration": 180
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 
 export async function runAttackChecks(config) {
-  if (config.step !== 11) {
-    throw new Error('이 점검은 11단계용입니다.');
+  if (config.step !== 12) {
+    throw new Error('이 점검은 12단계용입니다.');
   }
 
   const app = new URL(config.publicAppUrl);
@@ -91,7 +91,7 @@ export async function runAttackChecks(config) {
   const identityValid =
     identityResponse.status === 200 &&
     identity?.schema === 'aleph.defense.deployment.v1' &&
-    identity?.step === 11 &&
+    identity?.step === 12 &&
     identity?.repoUrl === config.repoUrl &&
     identity?.judgeIssuer === config.judgeIssuer &&
     identity?.sampleMarker === config.sampleMarker &&
@@ -99,7 +99,7 @@ export async function runAttackChecks(config) {
 
   record(
     'deployment_identity',
-    '배포 식별 정보가 11단계이며 현재 커밋과 일치',
+    '배포 식별 정보가 12단계이며 현재 커밋과 일치',
     identityValid,
     `배포 식별 정보와 현재 커밋 ${identityValid ? '일치' : '불일치'}`
   );

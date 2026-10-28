@@ -30,7 +30,7 @@
 </head>
 <body>
   <main>
-    <p>BYTE BACK · 11단계</p>
+    <p>BYTE BACK · 12단계</p>
     <h1>자료실</h1>
     <p id="account" role="status">로그인 상태를 확인하는 중입니다.</p>
 <section id="device-panel" aria-labelledby="device-heading">
@@ -81,7 +81,12 @@
     </form>
 
     <ul id="notes" aria-live="polite"></ul>
-  </main>
+
+<section id="operations-panel" hidden>
+  <h2>탈환 작전실</h2>
+  <div id="operations-root"></div>
+</section>
+</main>
   <script src="./vendor/webauthn-browser.min.js"></script>
 <script type="module" src="./app.js"></script>
 </body>

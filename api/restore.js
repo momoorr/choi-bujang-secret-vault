@@ -1,3 +1,4 @@
+import { stampResponse } from '../src/request-stamp.mjs';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
@@ -23,6 +24,7 @@ function audit(action, result) {
 }
 
 export default async function handler(req, res) {
+  stampResponse(res);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
 

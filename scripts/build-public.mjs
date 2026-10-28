@@ -15,8 +15,8 @@ const config = JSON.parse(
   await readFile(resolve(root, 'aleph.config.json'), 'utf8')
 );
 
-if (config.step !== 11) {
-  throw new Error('aleph.config.json의 step을 11으로 설정하세요.');
+if (config.step !== 12) {
+  throw new Error('aleph.config.json의 step을 12으로 설정하세요.');
 }
 
 await mkdir(publicDir, { recursive: true });
