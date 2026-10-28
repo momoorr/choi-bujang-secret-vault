@@ -49,6 +49,14 @@ export async function runAttackChecks(config) {
   }
 
   for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+    if (method !== 'GET') {
+      results.push({
+        attackId: `anonymous_${method.toLowerCase()}_denied`,
+        expected: `Anonymous ${method} must return HTTP 401 or 403 with a JSON error`,
+        observed: 'not_run: judge sandbox permits GET and HEAD only; request was not sent',
+      });
+      continue;
+    }
     const response = await request('/api/notes', { method });
     const data = await json(response);
     const passed =
