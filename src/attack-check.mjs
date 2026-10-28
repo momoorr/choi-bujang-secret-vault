@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process';
 
-export async function runAttackChecks(config) {
+export async function runAttackChecks(config, { commit } = {}) {
   if (config.step !== 12) {
     throw new Error('이 점검은 12단계용입니다.');
   }
@@ -17,9 +16,9 @@ export async function runAttackChecks(config) {
     throw new Error('실제 HTTPS 배포 주소를 확인하세요.');
   }
 
-  const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
-    encoding: 'utf8',
-  }).trim();
+  if (typeof commit !== 'string' || !/^[0-9a-f]{40}$/i.test(commit)) {
+    throw new Error('A verified commit from bundle is required.');
+  }
 
   const results = [];
 
