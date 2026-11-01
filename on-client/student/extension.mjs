@@ -103,38 +103,63 @@ export function createStudentView({ api } = {}) {
     paintPcComparison();
   }
   function createPcComparison() {
-    const make = (tag, text) => {
+    const make = (tag, text, className) => {
       const node = document.createElement(tag);
       if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
       return node;
     };
     const panel = make('section');
     panel.setAttribute('data-momobom-pc-comparison', '');
     panel.appendChild(make('h3', 'PC 자원 비교'));
-    panel.appendChild(make('p', '학생 추가 기능: 제공된 로컬 PC 조회 결과의 CPU·메모리 사용량과 디스크 여유 공간을 직전 조회와 비교합니다.'));
-    const button = make('button', 'PC 자원 비교 조회');
+    panel.appendChild(make('p', '제공된 PC 조회 자료를 재사용한 학생 비교 기능입니다. 수동으로 조회한 두 시점의 변화를 확인합니다.', 'muted'));
+
+    const controls = make('div', undefined, 'row');
+    controls.style.marginBottom = '12px';
+    const button = make('button', 'PC 자원 비교 조회', 'btn');
     button.type = 'button';
-    button.className = 'btn';
-    panel.appendChild(button);
-    const live = make('p');
+    button.style.minHeight = '44px';
+    controls.appendChild(button);
+    panel.appendChild(controls);
+
+    const live = make('p', undefined, 'state state-empty');
     live.setAttribute('role', 'status');
     live.setAttribute('aria-live', 'polite');
     live.setAttribute('aria-atomic', 'true');
     panel.appendChild(live);
     const body = make('div');
     panel.appendChild(body);
-    panel.appendChild(make('p', '버튼을 누를 때만 조회합니다. 값은 조회 뒤 달라질 수 있습니다. 비교 기준은 이 탭에만 보관하며 새로고침하면 초기화됩니다.'));
-    panel.appendChild(make('p', '용량 단위는 GiB(1024³바이트)입니다. 제공 화면의 GB 표기와 같은 환산 기준입니다. CPU 변화의 %p는 퍼센트포인트이며 보안·침해 판정이 아닙니다.'));
+    panel.appendChild(make('p', '수동 조회 · 최근 두 번만 비교 · 새로고침하면 초기화', 'muted'));
+
+    const help = make('details');
+    const summary = make('summary', '계산 기준 보기');
+    summary.style.cursor = 'pointer';
+    summary.style.minHeight = '32px';
+    help.appendChild(summary);
+    help.appendChild(make('p', 'CPU는 짧은 측정 구간의 사용률이며 변화는 퍼센트포인트(%p)입니다. 메모리는 사용량, 디스크는 여유 공간을 비교합니다.'));
+    help.appendChild(make('p', '용량 단위 GiB는 1024³바이트입니다. 제공 화면의 GB 표기와 환산 기준은 같습니다. 변화는 반올림 전 원래 값으로 계산하므로 표시값이 같아도 미세한 차이가 있을 수 있습니다.'));
+    help.appendChild(make('p', '조회 경로: 제공 API /api/pc/status · 출처 코드: local-pc. 위쪽 제공 카드와는 조회 시점이 다를 수 있습니다. 값은 조회 후 달라질 수 있으며 PC 전체의 안전이나 침해 여부를 판단한 결과가 아닙니다.'));
+    panel.appendChild(help);
+
+    const addTime = (parent, title, iso) => {
+      const line = make('p', undefined, 'muted');
+      line.appendChild(make('span', title + ': '));
+      const time = make('time', new Date(iso).toLocaleString('ko-KR', { timeZoneName: 'short' }));
+      time.setAttribute('datetime', iso);
+      line.appendChild(time);
+      parent.appendChild(line);
+    };
     const paint = () => {
       body.replaceChildren();
       const loading = pcState.status === 'loading';
       button.textContent = loading ? 'PC 자원 조회 중…' : 'PC 자원 비교 조회';
-      // 조회 중에도 키보드 초점을 유지하되, 중복 요청은 readPcComparison에서 막는다.
       button.setAttribute('aria-disabled', String(loading));
       panel.setAttribute('aria-busy', String(loading));
+      live.className = 'state ' + (loading ? 'state-loading' : pcState.status === 'error' ? 'state-error' : 'state-empty');
+
       if (pcState.status === 'idle') {
-        live.textContent = '비교 조회 전 · 아직 학생 비교 영역에서 조회하지 않았습니다.';
-        body.appendChild(make('p', '첫 조회는 기준값을 표시하고, 두 번째 조회부터 변화를 표시합니다. 위쪽 제공 카드의 이전 값은 자동으로 가져오지 않습니다.'));
+        live.textContent = '비교 조회 전 · 첫 조회로 기준값을 만드세요.';
+        body.appendChild(make('p', '조회 버튼을 누르면 CPU·메모리·디스크 카드가 표시됩니다. 두 번째 조회부터 이전 값과 비교합니다.'));
       } else if (loading) {
         live.textContent = 'PC 자원 조회 중 · 새 결과를 기다리고 있습니다.';
       } else if (pcState.status === 'error') {
@@ -147,34 +172,41 @@ export function createStudentView({ api } = {}) {
         const unavailable = ['cpu', 'memory', 'disk'].filter(key => !now[key].available).length;
         live.textContent = unavailable ? '조회 응답 수신 · 확인 불가 항목 ' + unavailable + '개'
           : before ? '조회 응답 수신 · 직전 조회와 비교했습니다.' : '첫 조회 수신 · 비교 기준을 표시합니다.';
-        body.appendChild(make('p', '출처: 제공 API /api/pc/status · local-pc · 이 앱을 실행한 PC'));
-        body.appendChild(make('p', '최근 측정 시각: ' + new Date(now.measuredAt).toLocaleString('ko-KR') + ' (' + now.measuredAt + ')'));
-        if (before) body.appendChild(make('p', '이전 측정 시각: ' + new Date(before.measuredAt).toLocaleString('ko-KR') + ' (' + before.measuredAt + ')'));
-        const table = make('table');
-        table.appendChild(make('caption', '최근 두 번의 수동 조회 비교'));
-        const head = make('thead');
-        const headRow = make('tr');
-        for (const text of ['항목', '이전 조회', '최근 조회', '변화']) {
-          const cell = make('th', text);
-          cell.setAttribute('scope', 'col');
-          headRow.appendChild(cell);
-        }
-        head.appendChild(headRow);
-        table.appendChild(head);
-        const rows = make('tbody');
+        body.appendChild(make('p', '출처: 이 앱을 실행한 PC · 실제 조회 · 외부 보안 서버 연결 상태와 별도', 'muted'));
+        addTime(body, '최근 측정 시각', now.measuredAt);
+        if (before) addTime(body, '이전 측정 시각', before.measuredAt);
+
+        const cards = make('div', undefined, 'grid-2');
+        cards.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))';
+        cards.setAttribute('data-momobom-pc-results', '');
         for (const [key, title] of [['cpu', 'CPU 사용률'], ['memory', '메모리 사용량'], ['disk', '디스크 여유 공간']]) {
-          const row = make('tr');
-          const label = make('th', title);
-          label.setAttribute('scope', 'row');
-          row.appendChild(label);
-          row.appendChild(make('td', before ? pcValue(key, before[key]) : '첫 조회 · 이전 값 없음'));
-          row.appendChild(make('td', pcValue(key, now[key])));
-          row.appendChild(make('td', pcDifference(key, before?.[key], now[key])));
-          rows.appendChild(row);
+          const metric = now[key];
+          const card = make('article', undefined, 'card');
+          card.setAttribute('data-momobom-pc-metric', key);
+          const heading = make('h4', title);
+          heading.style.margin = '0 0 8px';
+          card.appendChild(heading);
+          card.appendChild(make('p', '최근 조회', 'muted'));
+          const valueLine = make('p');
+          valueLine.style.margin = '6px 0 8px';
+          const value = make('strong', metric.available
+            ? key === 'cpu' ? metric.amount.toFixed(1) + '%' : (metric.amount / pcGiB).toFixed(2) + ' GiB'
+            : '확인 불가');
+          value.setAttribute('data-momobom-pc-value', '');
+          value.style.fontSize = metric.available ? '1.6rem' : '1.15rem';
+          value.style.fontVariantNumeric = 'tabular-nums';
+          value.style.color = metric.available ? 'var(--accent)' : 'var(--unknown)';
+          valueLine.appendChild(value);
+          card.appendChild(valueLine);
+          if (!metric.available) card.appendChild(make('p', metric.reason));
+          else if (key !== 'cpu') card.appendChild(make('p', '전체 용량: ' + (metric.total / pcGiB).toFixed(2) + ' GiB', 'muted'));
+          card.appendChild(make('p', before ? '이전 조회: ' + pcValue(key, before[key]) : '이전 조회 없음 · 첫 기준값', 'muted'));
+          const difference = make('p');
+          difference.appendChild(make('strong', pcDifference(key, before?.[key], metric)));
+          card.appendChild(difference);
+          cards.appendChild(card);
         }
-        table.appendChild(rows);
-        body.appendChild(table);
-        body.appendChild(make('p', '메모리는 사용량, 디스크는 여유 공간의 변화를 비교합니다. CPU는 짧은 측정 구간의 값이므로 다른 도구와 시점에 따라 차이가 날 수 있습니다.'));
+        body.appendChild(cards);
       }
     };
     paintPcComparison = paint;

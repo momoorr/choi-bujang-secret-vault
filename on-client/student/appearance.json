@@ -1,0 +1,10 @@
+{
+  "schema": "alekov.student-appearance.v1",
+  "appName": "momobom",
+  "palette": {
+    "accent": "#1e3a5f",
+    "background": "#f4f7fb",
+    "surface": "#ffffff"
+  },
+  "dashboardPreset": "student-first"
+}
