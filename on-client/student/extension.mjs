@@ -1,6 +1,188 @@
 // 이 파일은 학생이 같은 프로젝트에서 이어서 구현합니다.
 // 제공 UI를 받은 것만으로 단계 완료를 인정하지 않습니다.
-export function createStudentView() {
+export function createStudentView({ api } = {}) {
+  // 학생 추가: 제공 PC 조회 API를 재사용한다. 비교 자료는 이 탭의 메모리에만 둔다.
+  const pcState = { status: 'idle', current: null, previous: null, error: null };
+  let paintPcComparison = () => {};
+  const pcGiB = 1024 ** 3;
+  const pcReasons = {
+    permission_denied: '읽기 권한 없음',
+    unsupported: '이 환경에서 지원하지 않음',
+    timeout: '조회 시간 초과',
+    cancelled: '조회 취소',
+    query_failed: '조회 실패',
+    invalid_response: '응답 값 확인 불가',
+    invalid_sample: '측정 표본 확인 불가',
+  };
+  const pcErrors = {
+    TIMEOUT: '로컬 서버 응답 시간이 초과됐습니다.',
+    NETWORK_ERROR: '로컬 앱 서버에 연결할 수 없습니다.',
+    CANCELLED: '조회를 취소했습니다.',
+    NOT_ALLOWED: '현재 제공 코드에서 PC 조회를 허용하지 않습니다.',
+    INVALID_RESPONSE: '로컬 서버 응답 형식을 확인할 수 없습니다.',
+    PC_API_UNAVAILABLE: '제공된 학생 PC 조회 인터페이스를 사용할 수 없습니다.',
+    PC_DATA_INVALID: 'PC 조회 자료의 출처·시각·형식을 확인할 수 없습니다.',
+    PC_DATA_STALE: '측정 시각이 오래됐거나 이전 조회보다 새롭지 않습니다.',
+    PC_LOOKUP_FAILED: '이번 PC 자원 조회 결과를 확인할 수 없습니다.',
+  };
+  const pcMetric = (key, value) => {
+    if (value?.state !== 'ok') {
+      return { available: false, reason: Object.hasOwn(pcReasons, value?.reason) ? pcReasons[value.reason] : '이번 조회에서 확인하지 못함' };
+    }
+    if (key === 'cpu' && typeof value.usagePercent === 'number' &&
+        Number.isFinite(value.usagePercent) && value.usagePercent >= 0 && value.usagePercent <= 100) {
+      return { available: true, amount: value.usagePercent, total: null };
+    }
+    const amount = key === 'memory' ? value.usedBytes : value.freeBytes;
+    if (key !== 'cpu' && Number.isSafeInteger(amount) && amount >= 0 &&
+        Number.isSafeInteger(value.totalBytes) && value.totalBytes > 0 && amount <= value.totalBytes) {
+      return { available: true, amount, total: value.totalBytes };
+    }
+    return { available: false, reason: '값·단위 확인 불가' };
+  };
+  const pcValue = (key, metric) => {
+    if (!metric?.available) return '확인 불가 (' + (metric?.reason || '이전 조회 없음') + ')';
+    if (key === 'cpu') return metric.amount.toFixed(1) + '%';
+    return (metric.amount / pcGiB).toFixed(2) + ' / ' + (metric.total / pcGiB).toFixed(2) + ' GiB';
+  };
+  const pcDifference = (key, previous, current) => {
+    if (!previous) return '첫 조회 · 다음 조회부터 비교';
+    if (!previous.available || !current.available) return '비교 불가 · 양쪽 측정값이 필요합니다.';
+    if (key !== 'cpu' && previous.total !== current.total) return '비교 불가 · 전체 용량이 달라졌습니다.';
+    const delta = (current.amount - previous.amount) / (key === 'cpu' ? 1 : pcGiB);
+    const digits = key === 'cpu' ? 1 : 2;
+    const unit = key === 'cpu' ? '%p' : 'GiB';
+    if (delta === 0) return '변화 없음 (0 ' + unit + ')';
+    const magnitude = Math.abs(delta).toFixed(digits);
+    const direction = delta > 0 ? '증가' : '감소';
+    return Number(magnitude) === 0 ? '표시 정밀도 미만 ' + direction
+      : direction + ' ' + magnitude + ' ' + unit;
+  };
+  const pcSnapshot = (data) => {
+    const timestamp = data?.measuredAt;
+    if (data?.schema !== 'aleph.on.pc-status.v1' || data.source !== 'local-pc' ||
+        typeof timestamp !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
+        !Number.isFinite(Date.parse(timestamp)) || !data.metrics || typeof data.metrics !== 'object' || Array.isArray(data.metrics)) {
+      throw Error('PC_DATA_INVALID');
+    }
+    const measured = Date.parse(timestamp);
+    if (Math.abs(Date.now() - measured) > 60000 ||
+        (pcState.current && measured <= Date.parse(pcState.current.measuredAt))) {
+      throw Error('PC_DATA_STALE');
+    }
+    return {
+      measuredAt: timestamp,
+      cpu: pcMetric('cpu', data.metrics.cpu),
+      memory: pcMetric('memory', data.metrics.memory),
+      disk: pcMetric('disk', data.metrics.disk),
+    };
+  };
+  async function readPcComparison() {
+    if (pcState.status === 'loading') return;
+    pcState.status = 'loading';
+    pcState.error = null;
+    paintPcComparison();
+    try {
+      if (!api || typeof api.get !== 'function') throw Error('PC_API_UNAVAILABLE');
+      const result = await api.get('/api/pc/status');
+      if (result?.ok !== true) {
+        const code = result?.error?.code;
+        throw Error(typeof code === 'string' && Object.hasOwn(pcErrors, code) ? code : 'PC_LOOKUP_FAILED');
+      }
+      const snapshot = pcSnapshot(result.data);
+      pcState.previous = pcState.current;
+      pcState.current = snapshot;
+      pcState.status = 'ok';
+    } catch (error) {
+      // 실패하면 이전 표와 값을 지우고, 다음 조회에서 비교 기준을 새로 시작한다.
+      pcState.current = null;
+      pcState.previous = null;
+      pcState.status = 'error';
+      pcState.error = Object.hasOwn(pcErrors, error?.message) ? error.message : 'PC_LOOKUP_FAILED';
+    }
+    paintPcComparison();
+  }
+  function createPcComparison() {
+    const make = (tag, text) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+    const panel = make('section');
+    panel.setAttribute('data-momobom-pc-comparison', '');
+    panel.appendChild(make('h3', 'PC 자원 비교'));
+    panel.appendChild(make('p', '학생 추가 기능: 제공된 로컬 PC 조회 결과의 CPU·메모리 사용량과 디스크 여유 공간을 직전 조회와 비교합니다.'));
+    const button = make('button', 'PC 자원 비교 조회');
+    button.type = 'button';
+    button.className = 'btn';
+    panel.appendChild(button);
+    const live = make('p');
+    live.setAttribute('role', 'status');
+    live.setAttribute('aria-live', 'polite');
+    live.setAttribute('aria-atomic', 'true');
+    panel.appendChild(live);
+    const body = make('div');
+    panel.appendChild(body);
+    panel.appendChild(make('p', '버튼을 누를 때만 조회합니다. 값은 조회 뒤 달라질 수 있습니다. 비교 기준은 이 탭에만 보관하며 새로고침하면 초기화됩니다.'));
+    panel.appendChild(make('p', '용량 단위는 GiB(1024³바이트)입니다. 제공 화면의 GB 표기와 같은 환산 기준입니다. CPU 변화의 %p는 퍼센트포인트이며 보안·침해 판정이 아닙니다.'));
+    const paint = () => {
+      body.replaceChildren();
+      const loading = pcState.status === 'loading';
+      button.textContent = loading ? 'PC 자원 조회 중…' : 'PC 자원 비교 조회';
+      // 조회 중에도 키보드 초점을 유지하되, 중복 요청은 readPcComparison에서 막는다.
+      button.setAttribute('aria-disabled', String(loading));
+      panel.setAttribute('aria-busy', String(loading));
+      if (pcState.status === 'idle') {
+        live.textContent = '비교 조회 전 · 아직 학생 비교 영역에서 조회하지 않았습니다.';
+        body.appendChild(make('p', '첫 조회는 기준값을 표시하고, 두 번째 조회부터 변화를 표시합니다. 위쪽 제공 카드의 이전 값은 자동으로 가져오지 않습니다.'));
+      } else if (loading) {
+        live.textContent = 'PC 자원 조회 중 · 새 결과를 기다리고 있습니다.';
+      } else if (pcState.status === 'error') {
+        live.textContent = 'PC 자원 조회 실패 · 현재 결과를 확인할 수 없습니다.';
+        body.appendChild(make('p', pcState.error + ': ' + pcErrors[pcState.error]));
+        body.appendChild(make('p', '앱 실행 상태와 오류 원인을 확인한 뒤 PC 자원 비교 조회를 직접 누르세요. 다음 조회는 비교 기준을 새로 시작합니다.'));
+      } else {
+        const now = pcState.current;
+        const before = pcState.previous;
+        const unavailable = ['cpu', 'memory', 'disk'].filter(key => !now[key].available).length;
+        live.textContent = unavailable ? '조회 응답 수신 · 확인 불가 항목 ' + unavailable + '개'
+          : before ? '조회 응답 수신 · 직전 조회와 비교했습니다.' : '첫 조회 수신 · 비교 기준을 표시합니다.';
+        body.appendChild(make('p', '출처: 제공 API /api/pc/status · local-pc · 이 앱을 실행한 PC'));
+        body.appendChild(make('p', '최근 측정 시각: ' + new Date(now.measuredAt).toLocaleString('ko-KR') + ' (' + now.measuredAt + ')'));
+        if (before) body.appendChild(make('p', '이전 측정 시각: ' + new Date(before.measuredAt).toLocaleString('ko-KR') + ' (' + before.measuredAt + ')'));
+        const table = make('table');
+        table.appendChild(make('caption', '최근 두 번의 수동 조회 비교'));
+        const head = make('thead');
+        const headRow = make('tr');
+        for (const text of ['항목', '이전 조회', '최근 조회', '변화']) {
+          const cell = make('th', text);
+          cell.setAttribute('scope', 'col');
+          headRow.appendChild(cell);
+        }
+        head.appendChild(headRow);
+        table.appendChild(head);
+        const rows = make('tbody');
+        for (const [key, title] of [['cpu', 'CPU 사용률'], ['memory', '메모리 사용량'], ['disk', '디스크 여유 공간']]) {
+          const row = make('tr');
+          const label = make('th', title);
+          label.setAttribute('scope', 'row');
+          row.appendChild(label);
+          row.appendChild(make('td', before ? pcValue(key, before[key]) : '첫 조회 · 이전 값 없음'));
+          row.appendChild(make('td', pcValue(key, now[key])));
+          row.appendChild(make('td', pcDifference(key, before?.[key], now[key])));
+          rows.appendChild(row);
+        }
+        table.appendChild(rows);
+        body.appendChild(table);
+        body.appendChild(make('p', '메모리는 사용량, 디스크는 여유 공간의 변화를 비교합니다. CPU는 짧은 측정 구간의 값이므로 다른 도구와 시점에 따라 차이가 날 수 있습니다.'));
+      }
+    };
+    paintPcComparison = paint;
+    button.addEventListener('click', () => { void readPcComparison(); });
+    paint();
+    return panel;
+  }
+
   return {
     renderIdentity({ me, devices, sessions }) {
       const root = document.createElement('section');
@@ -338,6 +520,7 @@ export function createStudentView() {
     },
     renderStatus({ devices, sessions, notifications, diagnostics, mode }) {
       const root = document.createElement('section');
+      root.appendChild(createPcComparison());
       const modeNames = {
         demo: '예제 자료', disconnected: '연결 없음', unknown: '확인 불가',
       };
